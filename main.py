@@ -1,30 +1,34 @@
-import gymnasium as gym
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+
+from envs.custom_lunar_lander import CustomLunarLander
+
 
 def main():
-    # Initialize the LunarLander environment
-    # render_mode="human" tells the environment to display a window
-    env = gym.make("LunarLander-v3", render_mode="human")
+    # Usar o ambiente modificado em vez de gym.make()
+    env = CustomLunarLander(render_mode="human")
 
-    # Reset the environment to get the initial observation
-    # We set a seed for reproducibility
-    observation, info = env.reset(seed=42)
+    print("Espaço de observação:", env.observation_space.shape)  # deve ser (10,) ou (8,)
+    print("Espaço de ações:", env.action_space)
 
-    # Run for 1000 steps
-    for step in range(1000):
-        # Sample a random action from the action space
-        # Actions: 0=Do nothing, 1=Fire left engine, 2=Fire main engine, 3=Fire right engine
-        action = env.action_space.sample()
+    for episode in range(5):
+        observation, info = env.reset(seed=None)  # seed=None para pad verdadeiramente aleatório
+        print(f"\n--- Episódio {episode + 1} | Pad no chunk: {env._pad_idx} ---")
 
-        # Apply the action to the environment
-        observation, reward, terminated, truncated, info = env.step(action)
+        for step in range(500):
+            # Ação aleatória — substituir por agente treinado depois
+            action = env.action_space.sample()
 
-        # If the lander crashes (terminated) or runs out of time (truncated), reset
-        if terminated or truncated:
-            print(f"Episode ended at step {step}. Resetting...")
-            observation, info = env.reset()
+            observation, reward, terminated, truncated, info = env.step(action)
 
-    # Close the environment and the rendering window
+            if terminated or truncated:
+                print(f"  Episódio terminou ao step {step}.")
+                break
+
     env.close()
+    print("\nDone.")
+
 
 if __name__ == "__main__":
     main()
