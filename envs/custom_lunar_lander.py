@@ -1,4 +1,5 @@
 import numpy as np
+from gymnasium import spaces
 from gymnasium.envs.box2d.lunar_lander import LunarLander, VIEWPORT_W, VIEWPORT_H, SCALE
 
 try:
@@ -24,6 +25,15 @@ class CustomLunarLander(LunarLander):
         [8] posição x do pad (normalizada, nova!)
         [9] posição y do pad (normalizada, nova!)
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(10,),
+            dtype=np.float32,
+        )
 
     def reset(self, *, seed=None, options=None):
         # Inicializar helipad_center_x para evitar AttributeError durante super().reset()

@@ -1,3 +1,5 @@
 gymnasium[box2d]
 pygame
 matplotlib
+stable-baselines3
+tensorboard

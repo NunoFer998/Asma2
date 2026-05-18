@@ -1,1 +1,3 @@
 .venv
+tensorboard
+__pycache__
