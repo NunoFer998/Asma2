@@ -23,8 +23,9 @@ def make_env(render_mode: str | None = None, seed: int | None = None) -> CustomL
     return env
 
 
-def make_vec_env(seed: int | None = None) -> DummyVecEnv:
+def make_vec_env(seed: int | None = None, render_mode: str | None = None) -> DummyVecEnv:
     def _factory() -> Monitor:
+        # training envs should not render for performance
         env = make_env(render_mode=None, seed=seed)
         return Monitor(env)
 
@@ -52,16 +53,17 @@ def train_ppo_agent(
     model_path: Path | None = None,
     eval_frequency: int = 50_000,
     seed: int = 42,
+    render_mode: str | None = None,
 ) -> Path:
     output_path = model_path or DEFAULT_MODEL_PATH
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    validation_env = make_env(render_mode=None, seed=seed)
+    validation_env = make_env(render_mode=render_mode, seed=seed)
     check_env(validation_env, warn=True)
     validation_env.close()
-
     train_env = make_vec_env(seed=seed)
-    eval_env = make_vec_env(seed=seed + 1)
+    # use a single env for evaluation so rendering opens a window
+    eval_env = make_env(render_mode=render_mode, seed=seed + 1)
     model = build_model(train_env)
 
     checkpoint_callback = CheckpointCallback(
@@ -75,7 +77,7 @@ def train_ppo_agent(
         log_path=str(output_path.parent / "eval_logs"),
         eval_freq=max(eval_frequency, 1),
         deterministic=True,
-        render=False,
+        render=(render_mode is not None),
     )
 
     model.learn(total_timesteps=total_timesteps, callback=[checkpoint_callback, eval_callback])
@@ -101,6 +103,11 @@ def run_policy(
     try:
         for episode in range(episodes):
             observation, info = env.reset(seed=None if seed is None else seed + episode)
+            if render_mode is not None:
+                try:
+                    env.render()
+                except Exception:
+                    pass
             terminated = False
             truncated = False
             total_reward = 0.0
@@ -108,6 +115,11 @@ def run_policy(
             while not (terminated or truncated):
                 action, _ = model.predict(observation, deterministic=True)
                 observation, reward, terminated, truncated, info = env.step(action)
+                if render_mode is not None:
+                    try:
+                        env.render()
+                    except Exception:
+                        pass
                 total_reward += float(reward)
 
             print(f"Episode {episode + 1}: total_reward={total_reward:.2f}, pad_chunk={getattr(env, '_pad_idx', 'n/a')}")

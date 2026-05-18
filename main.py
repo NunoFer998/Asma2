@@ -46,6 +46,7 @@ def main() -> None:
             episodes=args.episodes,
             model_path=args.model_path,
             seed=args.seed,
+            render_mode=None if args.no_display else "human",
         )
         return
 
