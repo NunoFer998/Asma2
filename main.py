@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from rl_agent import DEFAULT_MODEL_PATH, load_model, run_policy, train_then_run
+from rl_agent import DEFAULT_MODEL_PATH, load_model, run_policy, run_random_baseline, train_then_run
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,11 +22,23 @@ def parse_args() -> argparse.Namespace:
         help="Path used to save or load the PPO model.",
     )
     parser.add_argument("--no-display", action="store_true", help="Run without opening a display (headless).")
+    parser.add_argument("--random", action="store_true", help="Run a random-action baseline instead of the trained agent.")
+    parser.add_argument("--continue", dest="continue_training", action="store_true",
+                        help="Continue training from an existing model instead of starting fresh (use with --train).")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    if args.random:
+        print("Running random baseline...")
+        run_random_baseline(
+            episodes=args.episodes,
+            render_mode=None if args.no_display else "human",
+            seed=args.seed,
+        )
+        return
 
     if args.train:
         train_then_run(
@@ -35,6 +47,7 @@ def main() -> None:
             model_path=args.model_path,
             seed=args.seed,
             render_mode=None if args.no_display else "human",
+            continue_training=args.continue_training,
         )
         return
 
