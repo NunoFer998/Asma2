@@ -1,3 +1,6 @@
 .venv
 tensorboard
 __pycache__
+logs/*
+models   
+venv

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -98,8 +100,16 @@ def run_policy(
     episodes: int = 5,
     render_mode: str | None = "human",
     seed: int | None = None,
-) -> None:
+    save_log: bool = True,
+) -> list[dict]:
+    """Run the policy for *episodes* episodes and optionally save a JSON log.
+
+    Returns a list of episode dictionaries, each containing the actions,
+    observations, rewards, and summary information.
+    """
     env = make_env(render_mode=render_mode, seed=seed)
+    all_episodes: list[dict] = []
+
     try:
         for episode in range(episodes):
             observation, info = env.reset(seed=None if seed is None else seed + episode)
@@ -111,6 +121,8 @@ def run_policy(
             terminated = False
             truncated = False
             total_reward = 0.0
+            step_count = 0
+            steps: list[dict] = []
 
             while not (terminated or truncated):
                 action, _ = model.predict(observation, deterministic=True)
@@ -121,10 +133,45 @@ def run_policy(
                     except Exception:
                         pass
                 total_reward += float(reward)
+                step_count += 1
 
+                # Record step data
+                steps.append({
+                    "step": step_count,
+                    "action": int(action) if hasattr(action, "item") else action,
+                    "reward": float(reward),
+                    "terminated": bool(terminated),
+                    "truncated": bool(truncated),
+                    "observation": observation.tolist(),
+                })
+
+            episode_data = {
+                "episode": episode + 1,
+                "total_reward": round(total_reward, 4),
+                "total_steps": step_count,
+                "pad_chunk": getattr(env, "_pad_idx", None),
+                "steps": steps,
+            }
+            all_episodes.append(episode_data)
             print(f"Episode {episode + 1}: total_reward={total_reward:.2f}, pad_chunk={getattr(env, '_pad_idx', 'n/a')}")
     finally:
         env.close()
+
+    if save_log:
+        _save_episode_log(all_episodes)
+
+    return all_episodes
+
+
+def _save_episode_log(episodes: list[dict]) -> Path:
+    """Persist episode data to a timestamped JSON file under ``logs/``."""
+    log_dir = PROJECT_ROOT / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"episode_actions_{timestamp}.json"
+    log_file.write_text(json.dumps(episodes, indent=2))
+    print(f"\nEpisode actions saved to {log_file}")
+    return log_file
 
 
 def train_then_run(
