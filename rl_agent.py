@@ -72,6 +72,7 @@ def train_ppo_agent(
     if continue_training and saved_file.exists():
         print(f"Continuing training from {saved_file}")
         model = PPO.load(str(output_path), env=train_env)
+        model.tensorboard_log = str(PROJECT_ROOT / "tensorboard")
     else:
         if continue_training:
             print(f"No existing model at {saved_file}, starting fresh.")
@@ -91,8 +92,13 @@ def train_ppo_agent(
         render=(render_mode is not None),
     )
 
-    model.learn(total_timesteps=total_timesteps, callback=[checkpoint_callback, eval_callback])
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=[checkpoint_callback, eval_callback],
+        reset_num_timesteps=not continue_training,
+    )
     model.save(str(output_path))
+    print(f"Model saved to {output_path.with_suffix('.zip')}")
 
     train_env.close()
     eval_env.close()
