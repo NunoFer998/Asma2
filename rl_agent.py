@@ -9,6 +9,7 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+from envs.finite_fuel_wrapper import FiniteFuelWrapper
 from envs.custom_lunar_lander import CustomLunarLander
 
 
@@ -18,6 +19,7 @@ DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "ppo_custom_lunar_lander"
 
 def make_env(render_mode: str | None = None, seed: int | None = None) -> CustomLunarLander:
     env = CustomLunarLander(render_mode=render_mode)
+    env = FiniteFuelWrapper(env)
     if seed is not None:
         env.reset(seed=seed)
     return env
