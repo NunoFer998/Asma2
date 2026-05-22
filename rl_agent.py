@@ -12,6 +12,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from envs.custom_lunar_lander import CustomLunarLander
+from evaluate import full_evaluation
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -313,6 +314,7 @@ def train_then_run(
     seed: int = 42,
     render_mode: str | None = "human",
     continue_training: bool = False,
+    eval_episodes: int = 50,
 ) -> Path:
     saved_model_path = train_ppo_agent(
         total_timesteps=total_timesteps,
@@ -322,4 +324,16 @@ def train_then_run(
     )
     model = load_model(saved_model_path)
     run_policy(model, episodes=episodes, render_mode=render_mode, seed=seed)
+
+    # ── Automatic post-training evaluation ──
+    print("\n" + "=" * 55)
+    print("  STARTING AUTOMATIC POST-TRAINING EVALUATION")
+    print("=" * 55)
+    full_evaluation(
+        model=model,
+        episodes=eval_episodes,
+        seed=seed,
+        model_dir=saved_model_path.parent,
+    )
+
     return saved_model_path
