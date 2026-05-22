@@ -438,6 +438,7 @@ def full_evaluation(
     episodes: int = 50,
     seed: int = 42,
     model_dir: Path | None = None,
+    config_tag: str = "",
 ) -> dict[str, Any]:
     """Run the complete evaluation pipeline and persist all outputs.
 
@@ -471,9 +472,14 @@ def full_evaluation(
 
     # ── 3. Generate & print report ──────────────────────────────
     report_text = _format_report(metrics, timestamp)
+    if config_tag:
+        # Prepend config tag to the report header
+        report_text = f"  Config: {config_tag}\n" + report_text
     print(f"\n{report_text}")
 
     log_dir = PROJECT_ROOT / "logs"
+    if config_tag:
+        log_dir = log_dir / config_tag
     log_dir.mkdir(parents=True, exist_ok=True)
 
     report_file = log_dir / f"evaluation_report_{timestamp}.txt"
@@ -481,7 +487,9 @@ def full_evaluation(
     print(f"Report saved → {report_file}")
 
     json_file = log_dir / f"evaluation_report_{timestamp}.json"
-    json_file.write_text(json.dumps(metrics, indent=2))
+    # Include the config tag in the JSON output
+    output_metrics = {**metrics, "config_tag": config_tag} if config_tag else metrics
+    json_file.write_text(json.dumps(output_metrics, indent=2))
     print(f"JSON   saved → {json_file}")
 
     # ── 4. Generate plots ───────────────────────────────────────
