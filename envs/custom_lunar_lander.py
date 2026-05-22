@@ -125,11 +125,39 @@ class CustomLunarLander(LunarLander):
         ]
         return np.array(state, dtype=np.float32)
 
+    # ── Precision landing bonus parameters ──────────────────────
+    #   bonus(d) = PRECISION_MAX_BONUS * exp(-d² / (2 * σ²))
+    #   where d = horizontal distance from pad centre (world units)
+    #
+    #   With σ = 0.4 (≈ half a chunk width):
+    #     d = 0.0  → +40.0   (bullseye)
+    #     d = 0.4  → +24.3   (edge of pad)
+    #     d = 1.0  → + 1.2   (one chunk away — nearly zero)
+    PRECISION_MAX_BONUS: float = 40.0
+    PRECISION_SIGMA: float = 0.4
+
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
 
         # Substituir os primeiros 8 valores da obs pelo estado corrigido
         # (o super().step() ainda calcula x relativo ao centro — corrigimos aqui)
         custom_obs = self._get_custom_obs()
+
+        # ── Precision landing bonus ──────────────────────────────
+        # Awarded only on a successful landing (terminated, both legs down,
+        # and the base reward is not deeply negative — i.e. not a crash).
+        if terminated and not truncated:
+            left_leg  = custom_obs[6] >= 0.5
+            right_leg = custom_obs[7] >= 0.5
+            not_crash = reward > -50.0  # crashes give ≈ -100
+
+            if left_leg and right_leg and not_crash:
+                dx = self.lander.position.x - self.helipad_center_x
+                precision_bonus = self.PRECISION_MAX_BONUS * np.exp(
+                    -(dx ** 2) / (2 * self.PRECISION_SIGMA ** 2)
+                )
+                reward += precision_bonus
+                info["precision_bonus"] = round(float(precision_bonus), 4)
+                info["landing_offset"]  = round(float(dx), 4)
 
         return custom_obs, reward, terminated, truncated, info
