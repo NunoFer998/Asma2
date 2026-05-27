@@ -22,10 +22,10 @@ class FiniteFuelWrapper(Wrapper):
         side_engine_cost: float = 10.0,
     ):
         # O env base DEVE estar em rgb_array — nós tratamos da janela
-        assert env.render_mode == "rgb_array", (
-            "FiniteFuelWrapper requer render_mode='rgb_array' no env base. "
-            "Usa gym.make('LunarLander-v3', render_mode='rgb_array')"
-        )
+        assert env.render_mode in (None, "rgb_array"), (
+        f"FiniteFuelWrapper requer render_mode=None ou 'rgb_array' no env base. "
+        f"Recebido: {env.render_mode!r}"
+    )
         super().__init__(env)
         self.max_fuel = float(max_fuel)
         self.main_engine_cost = float(main_engine_cost)
@@ -49,7 +49,8 @@ class FiniteFuelWrapper(Wrapper):
     def reset(self, *, seed=None, options=None):
         observation, info = self.env.reset(seed=seed, options=options)
         self.current_fuel = self.max_fuel
-        self._render_frame()
+        if self.env.render_mode == "rgb_array":
+            self._render_frame()
         return observation, info
 
     def step(self, action):
@@ -69,7 +70,8 @@ class FiniteFuelWrapper(Wrapper):
         info["max_fuel"] = self.max_fuel
         info["executed_action"] = executed_action
 
-        self._render_frame()
+        if self.env.render_mode == "rgb_array":
+            self._render_frame()
         return observation, reward, terminated, truncated, info
 
     def render(self):
@@ -78,6 +80,8 @@ class FiniteFuelWrapper(Wrapper):
 
     def _render_frame(self):
         """Obtém o frame rgb_array, desenha o HUD, apresenta na janela."""
+        if self.env.render_mode != "rgb_array":
+            return
         frame = self.env.render()  # numpy array (H, W, 3)
         if frame is None:
             return

@@ -26,6 +26,11 @@ class CustomLunarLander(LunarLander):
         [9] posição y do pad (normalizada, nova!)
     """
 
+    # Gymnasium defines LEG_DOWN = 18 in lunar_lander.py.
+    # We define it here explicitly so the env won't silently break
+    # if that module-level constant is ever renamed or changed.
+    _LEG_DOWN: int = 18
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.observation_space = spaces.Box(
@@ -34,9 +39,13 @@ class CustomLunarLander(LunarLander):
             shape=(10,),
             dtype=np.float32,
         )
+        self._custom_prev_shaping = None  # tracks our corrective shaping potential
 
     def reset(self, *, seed=None, options=None):
         # Inicializar helipad_center_x para evitar AttributeError durante super().reset()
+        # NOTA (Bug 3): durante super().reset() o parent calcula o shaping inicial
+        # usando o centro do ecrã como pad. Isto é inofensivo porque o parent
+        # reinicia prev_shaping = None no início de cada episódio.
         self.helipad_center_x = (VIEWPORT_W / SCALE) / 2  # Default: centro
         self.helipad_y = (VIEWPORT_H / SCALE) / 4  # Default height
         
@@ -45,6 +54,9 @@ class CustomLunarLander(LunarLander):
 
         # Reconstrói o terreno com pad aleatório (substitui o que o super() criou)
         self._rebuild_terrain_random()
+
+        # Reset do corrective shaping tracker (Bug 1 fix)
+        self._custom_prev_shaping = None
 
         # Recalcula a observação com o novo estado (pad na posição correta)
         obs = self._get_custom_obs()
@@ -99,7 +111,9 @@ class CustomLunarLander(LunarLander):
 
         state = [
             (pos.x - self.helipad_center_x) / (VIEWPORT_W / SCALE / 2),
-            (pos.y - (self.helipad_y + 18 / SCALE)) / (VIEWPORT_H / SCALE / 2),
+            # [1] y relativo ao pad (Bug 4: usa _LEG_DOWN em vez de magic number)
+            (pos.y - (self.helipad_y + self._LEG_DOWN / SCALE)) / (VIEWPORT_H / SCALE / 2),
+            # [2,3] velocidades
             vel.x * (VIEWPORT_W / SCALE / 2) / 50,
             vel.y * (VIEWPORT_H / SCALE / 2) / 50,
             self.lander.angle,
@@ -111,10 +125,76 @@ class CustomLunarLander(LunarLander):
         ]
         return np.array(state, dtype=np.float32)
 
+    # ── Precision landing bonus parameters ──────────────────────
+    #   bonus(d) = PRECISION_MAX_BONUS * exp(-d² / (2 * σ²))
+    #   where d = horizontal distance from pad centre (world units)
+    #
+    #   With σ = 0.4 (≈ half a chunk width):
+    #     d = 0.0  → +40.0   (bullseye)
+    #     d = 0.4  → +24.3   (edge of pad)
+    #     d = 1.0  → + 1.2   (one chunk away — nearly zero)
+    PRECISION_MAX_BONUS: float = 40.0
+    PRECISION_SIGMA: float = 0.4
+
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
 
       
         custom_obs = self._get_custom_obs()
+
+        # ════════════════════════════════════════════════════════════
+        #  Bug 1 fix: Corrective shaping  (potential-based)
+        # ════════════════════════════════════════════════════════════
+        # The parent's dense shaping penalises distance from the SCREEN
+        # CENTER (x = W/2).  We need the gradient to point at the actual
+        # PAD CENTER (self.helipad_center_x).
+        #
+        # Corrective potential:
+        #   Φ(s) = -100 * (|x_pad_norm| - |x_screen_norm|)
+        #
+        # Applied as:  reward += Φ(s) - Φ(s_prev)     (telescoping)
+        #
+        # Net effect on the agent's signal:
+        #   parent gave  ∝ -|x_screen|   per step
+        #   correction   ∝ -(|x_pad| - |x_screen|)
+        #   total        ∝ -|x_pad|      ← what we want
+        # ────────────────────────────────────────────────────────────
+        pos_x = self.lander.position.x
+        W = VIEWPORT_W / SCALE
+
+        x_screen_norm = (pos_x - W / 2) / (W / 2)
+        x_pad_norm    = (pos_x - self.helipad_center_x) / (W / 2)
+
+        corrective_shaping = -100.0 * (abs(x_pad_norm) - abs(x_screen_norm))
+
+        if self._custom_prev_shaping is not None:
+            reward += corrective_shaping - self._custom_prev_shaping
+        self._custom_prev_shaping = corrective_shaping
+
+        # ════════════════════════════════════════════════════════════
+        #  Bug 2 fix + Precision landing bonus
+        # ════════════════════════════════════════════════════════════
+        # Crash detection now uses self.game_over (set by the parent's
+        # ContactDetector when the lander HULL touches the ground)
+        # instead of a fragile reward threshold.
+        # ────────────────────────────────────────────────────────────
+        if terminated and not truncated:
+            landed_safely = (
+                not self.game_over
+                and self.legs[0].ground_contact
+                and self.legs[1].ground_contact
+            )
+
+            if landed_safely:
+                dx = self.lander.position.x - self.helipad_center_x
+                precision_bonus = self.PRECISION_MAX_BONUS * np.exp(
+                    -(dx ** 2) / (2 * self.PRECISION_SIGMA ** 2)
+                )
+                reward += precision_bonus
+                info["precision_bonus"] = round(float(precision_bonus), 4)
+                info["landing_offset"]  = round(float(dx), 4)
+
+        # ── Debug info (verify the shaping fix is working) ───────
+        info["x_pad_dist"] = round(float(abs(pos_x - self.helipad_center_x)), 4)
 
         return custom_obs, reward, terminated, truncated, info
