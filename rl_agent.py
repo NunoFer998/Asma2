@@ -19,7 +19,6 @@ DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "ppo_custom_lunar_lander"
 
 def make_env(render_mode: str | None = None, seed: int | None = None) -> CustomLunarLander:
     # Se render_mode="human", o env base corre em rgb_array
-    # e o FiniteFuelWrapper trata da janela ele próprio
     base_render_mode = "rgb_array" if render_mode == "human" else render_mode
     
     env = CustomLunarLander(render_mode=base_render_mode)
