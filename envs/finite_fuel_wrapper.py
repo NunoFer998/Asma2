@@ -1,21 +1,18 @@
 from __future__ import annotations
 
+import copy
 import numpy as np
+import gymnasium as gym
 from gymnasium import Wrapper
 
 try:
     import pygame
 except ImportError as e:
-    raise ImportError("pygame is required to render the fuel bar. Install gymnasium[box2d].") from e
+    raise ImportError("pygame is required. Install gymnasium[box2d].") from e
 
 
 class FiniteFuelWrapper(Wrapper):
-    """Adds a strict finite-fuel system on top of a LunarLander environment.
-
-    The wrapper keeps the base environment rewards and dynamics intact, but it
-    cuts engine thrust once the fuel tank is empty and renders a fuel bar in
-    human mode.
-    """
+    """Finite-fuel system with HUD overlay, usando o padrão rgb_array da Farama."""
 
     def __init__(
         self,
@@ -24,15 +21,35 @@ class FiniteFuelWrapper(Wrapper):
         main_engine_cost: float = 30.0,
         side_engine_cost: float = 10.0,
     ):
+        # O env base DEVE estar em rgb_array — nós tratamos da janela
+        assert env.render_mode == "rgb_array", (
+            "FiniteFuelWrapper requer render_mode='rgb_array' no env base. "
+            "Usa gym.make('LunarLander-v3', render_mode='rgb_array')"
+        )
         super().__init__(env)
         self.max_fuel = float(max_fuel)
         self.main_engine_cost = float(main_engine_cost)
         self.side_engine_cost = float(side_engine_cost)
         self.current_fuel = self.max_fuel
 
+        # Estado da janela pygame (gerido por nós, não pelo env base)
+        self._window = None
+        self._clock = None
+        self._screen_size = None
+
+        # Expõe render_mode como "human" para o exterior
+        self.metadata = copy.deepcopy(env.metadata)
+        if "human" not in self.metadata.get("render_modes", []):
+            self.metadata.setdefault("render_modes", []).append("human")
+
+    @property
+    def render_mode(self):
+        return "human"
+
     def reset(self, *, seed=None, options=None):
         observation, info = self.env.reset(seed=seed, options=options)
         self.current_fuel = self.max_fuel
+        self._render_frame()
         return observation, info
 
     def step(self, action):
@@ -51,20 +68,55 @@ class FiniteFuelWrapper(Wrapper):
         info["current_fuel"] = self.current_fuel
         info["max_fuel"] = self.max_fuel
         info["executed_action"] = executed_action
+
+        self._render_frame()
         return observation, reward, terminated, truncated, info
 
     def render(self):
-        frame = self.env.render()
+        # Compatibilidade — a renderização real acontece em step/reset
+        return None
 
-        if self.render_mode == "rgb_array":
-            if frame is None:
-                return None
-            return self._overlay_bar_on_frame(frame)
+    def _render_frame(self):
+        """Obtém o frame rgb_array, desenha o HUD, apresenta na janela."""
+        frame = self.env.render()  # numpy array (H, W, 3)
+        if frame is None:
+            return
 
-        self._draw_fuel_bar()
-        pygame.display.flip()
+        # Desenha a barra de combustível no array numpy
+        frame = self._overlay_bar_on_frame(frame)
 
-        return frame
+        # Transpõe para pygame (pygame usa W, H ao contrário de numpy H, W)
+        rgb_array = np.transpose(frame, axes=(1, 0, 2))
+
+        if self._screen_size is None:
+            self._screen_size = rgb_array.shape[:2]
+
+        # Inicializa a janela uma única vez
+        if self._window is None:
+            pygame.init()
+            pygame.display.init()
+            pygame.display.set_caption("Lunar Lander — Finite Fuel")
+            self._window = pygame.display.set_mode(self._screen_size)
+
+        if self._clock is None:
+            self._clock = pygame.time.Clock()
+
+        surf = pygame.surfarray.make_surface(rgb_array)
+        self._window.blit(surf, (0, 0))
+        pygame.event.pump()
+        self._clock.tick(self.metadata.get("render_fps", 50))
+        pygame.display.flip()  # ← único flip, controlado por nós
+
+    def close(self):
+        super().close()
+        if self._window is not None:
+            pygame.display.quit()
+            pygame.quit()
+            self._window = None
+
+    # ------------------------------------------------------------------ #
+    # Helpers
+    # ------------------------------------------------------------------ #
 
     def _fuel_cost_for_action(self, action: int) -> float:
         if action == 2:
@@ -73,42 +125,9 @@ class FiniteFuelWrapper(Wrapper):
             return self.side_engine_cost
         return 0.0
 
-    def _get_surface(self):
-        base_env = self.env.unwrapped
-        if self.render_mode == "human":
-            return getattr(base_env, "screen", None) or getattr(base_env, "window", None)
-        return getattr(base_env, "surf", None) or getattr(base_env, "screen", None)
-
-    def _draw_fuel_bar(self) -> None:
-        surface = self._get_surface()
-        if surface is None:
-            return
-
-        fuel_ratio = 0.0 if self.max_fuel <= 0 else max(0.0, min(1.0, self.current_fuel / self.max_fuel))
-        bar_width = 160
-        bar_height = 18
-        x = 12
-        y = 12
-        border_color = (245, 245, 245)
-        background_color = (20, 20, 20)
-        bar_color = (
-            int(255 * (1.0 - fuel_ratio)),
-            int(255 * fuel_ratio),
-            0,
-        )
-
-        pygame.draw.rect(surface, background_color, (x, y, bar_width, bar_height))
-        pygame.draw.rect(surface, border_color, (x, y, bar_width, bar_height), width=2)
-
-        inner_width = max(0, int((bar_width - 4) * fuel_ratio))
-        if inner_width > 0:
-            pygame.draw.rect(surface, bar_color, (x + 2, y + 2, inner_width, bar_height - 4))
-
-    def _overlay_bar_on_frame(self, frame):
-        bar_width = 160
-        bar_height = 18
-        x = 12
-        y = 12
+    def _overlay_bar_on_frame(self, frame: np.ndarray) -> np.ndarray:
+        bar_width, bar_height = 160, 18
+        x, y = 12, 12
         border_color = np.array([245, 245, 245], dtype=np.uint8)
         background_color = np.array([20, 20, 20], dtype=np.uint8)
 
@@ -116,18 +135,16 @@ class FiniteFuelWrapper(Wrapper):
         height, width = output.shape[:2]
         x2 = min(width, x + bar_width)
         y2 = min(height, y + bar_height)
-        if x >= x2 or y >= y2:
-            return output
 
         output[y:y2, x:x2] = background_color
 
-        border_thickness = 2
-        output[y:y + border_thickness, x:x2] = border_color
-        output[max(y2 - border_thickness, y):y2, x:x2] = border_color
-        output[y:y2, x:x + border_thickness] = border_color
-        output[y:y2, max(x2 - border_thickness, x):x2] = border_color
+        t = 2  # border thickness
+        output[y:y+t, x:x2] = border_color
+        output[max(y2-t, y):y2, x:x2] = border_color
+        output[y:y2, x:x+t] = border_color
+        output[y:y2, max(x2-t, x):x2] = border_color
 
-        fuel_ratio = 0.0 if self.max_fuel <= 0 else max(0.0, min(1.0, self.current_fuel / self.max_fuel))
+        fuel_ratio = max(0.0, min(1.0, self.current_fuel / self.max_fuel)) if self.max_fuel > 0 else 0.0
         inner_width = max(0, int((bar_width - 4) * fuel_ratio))
         if inner_width > 0:
             bar_color = np.array([
@@ -135,8 +152,6 @@ class FiniteFuelWrapper(Wrapper):
                 int(255 * fuel_ratio),
                 0,
             ], dtype=np.uint8)
-            fill_x2 = min(width, x + 2 + inner_width)
-            fill_y2 = min(height, y + bar_height - 2)
-            output[y + 2:fill_y2, x + 2:fill_x2] = bar_color
+            output[y+2:min(height, y2-2), x+2:min(width, x+2+inner_width)] = bar_color
 
         return output

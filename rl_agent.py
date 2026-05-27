@@ -18,12 +18,15 @@ DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "ppo_custom_lunar_lander"
 
 
 def make_env(render_mode: str | None = None, seed: int | None = None) -> CustomLunarLander:
-    env = CustomLunarLander(render_mode=render_mode)
+    # Se render_mode="human", o env base corre em rgb_array
+    # e o FiniteFuelWrapper trata da janela ele próprio
+    base_render_mode = "rgb_array" if render_mode == "human" else render_mode
+    
+    env = CustomLunarLander(render_mode=base_render_mode)
     env = FiniteFuelWrapper(env)
     if seed is not None:
         env.reset(seed=seed)
     return env
-
 
 def make_vec_env(seed: int | None = None, render_mode: str | None = None) -> DummyVecEnv:
     def _factory() -> Monitor:
