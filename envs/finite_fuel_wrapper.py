@@ -17,7 +17,7 @@ class FiniteFuelWrapper(Wrapper):
     def __init__(
         self,
         env,
-        max_fuel: float = 1200.0,
+        max_fuel: float = 3000.0,
         main_engine_cost: float = 12.0,
         side_engine_cost: float = 7.0,
     ):
