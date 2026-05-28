@@ -35,6 +35,8 @@ Examples:
     parser.add_argument("--evaluate", action="store_true",
                         help="Run a comprehensive evaluation on an existing model (reports + plots).")
     parser.add_argument("--random", action="store_true", help="Run a random-action baseline instead of the trained agent.")
+    parser.add_argument("--original-env", action="store_true",
+                        help="Run against the original Gymnasium LunarLander environment instead of the custom wrapper.")
 
     # ── General options ──
     parser.add_argument("--timesteps", type=int, default=500_000, help="Number of training timesteps.")
@@ -74,6 +76,7 @@ def main() -> None:
         learning_rate=args.lr,
         ent_coef=args.ent_coef,
         lr_decay=args.lr_decay,
+        use_original_env=args.original_env,
     )
 
     # Resolve model path: explicit --model-path wins, otherwise auto-generate from config
@@ -89,6 +92,7 @@ def main() -> None:
             render_mode=None if args.no_display else "human",
             seed=args.seed,
             config_tag=config_tag,
+            use_original_env=args.original_env,
         )
         return
 
@@ -103,8 +107,10 @@ def main() -> None:
             print(f"  Config tag: {config_tag}")
             print(f"  Train one first with: python main.py --train --no-display "
                   f"--n-steps {args.n_steps} --batch-size {args.batch_size} "
-                  f"--lr {args.lr} --ent-coef {args.ent_coef}"
+                f"--lr {args.lr} --ent-coef {args.ent_coef}"
                   + (" --lr-decay" if args.lr_decay else ""))
+            if args.original_env:
+                print("  Add --original-env to run the original Gymnasium environment.")
             sys.exit(1)
         print(f"Loading model from {model_file} for evaluation ...")
         print(f"  Config: {config_tag}")
@@ -115,6 +121,7 @@ def main() -> None:
             seed=args.seed,
             model_dir=model_path.parent,
             config_tag=config_tag,
+            use_original_env=args.original_env,
         )
         return
 
@@ -132,6 +139,7 @@ def main() -> None:
             learning_rate=args.lr,
             ent_coef=args.ent_coef,
             lr_decay=args.lr_decay,
+            use_original_env=args.original_env,
         )
         return
 
@@ -154,12 +162,13 @@ def main() -> None:
             learning_rate=args.lr,
             ent_coef=args.ent_coef,
             lr_decay=args.lr_decay,
+            use_original_env=args.original_env,
         )
         return
 
     model = load_model(model_path)
     run_policy(model, episodes=args.episodes, render_mode=None if args.no_display else "human",
-               seed=args.seed, config_tag=config_tag)
+               seed=args.seed, config_tag=config_tag, use_original_env=args.original_env)
 
 
 if __name__ == "__main__":

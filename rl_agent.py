@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_checker import check_env
@@ -13,6 +14,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 
 from envs.finite_fuel_wrapper import FiniteFuelWrapper
 from envs.custom_lunar_lander import CustomLunarLander
+from gymnasium.envs.box2d.lunar_lander import LunarLander
 from evaluate import full_evaluation
 
 
@@ -30,6 +32,7 @@ def make_config_tag(
     learning_rate: float = 3e-4,
     ent_coef: float = 0.01,
     lr_decay: bool = False,
+    use_original_env: bool = False,
 ) -> str:
     """Return a short, filesystem-safe string that uniquely identifies a run.
 
@@ -39,6 +42,8 @@ def make_config_tag(
     tag = f"ns{n_steps}_bs{batch_size}_lr{lr_str}_ec{ent_coef}"
     if lr_decay:
         tag += "_decay"
+    if use_original_env:
+        tag = f"orig_{tag}"
     return tag
 
 
@@ -46,18 +51,29 @@ def make_config_tag(
 #  Environment helpers
 # ═══════════════════════════════════════════════════════════════════════
 
-def make_env(render_mode: str | None = None, seed: int | None = None) -> CustomLunarLander:
-    # Se render_mode="human", o env base corre em rgb_array
-    base_render_mode = "rgb_array" if render_mode == "human" else render_mode
-    
-    env = CustomLunarLander(render_mode=base_render_mode)
-    env = FiniteFuelWrapper(env)
+def make_env(
+    render_mode: str | None = None,
+    seed: int | None = None,
+    use_original_env: bool = False,
+) -> gym.Env:
+    if use_original_env:
+        env = LunarLander(render_mode=render_mode)
+    else:
+        # Se render_mode="human", o env base corre em rgb_array
+        base_render_mode = "rgb_array" if render_mode == "human" else render_mode
+        env = CustomLunarLander(render_mode=base_render_mode)
+        env = FiniteFuelWrapper(env)
     if seed is not None:
         env.reset(seed=seed)
     return env
 
 
-def make_vec_env(seed: int | None = None, n_envs: int = 4, render_mode: str | None = None) -> DummyVecEnv:
+def make_vec_env(
+    seed: int | None = None,
+    n_envs: int = 4,
+    render_mode: str | None = None,
+    use_original_env: bool = False,
+) -> DummyVecEnv:
     """Create a vectorised training environment with *n_envs* sub-environments.
 
     Each sub-environment receives a different seed (seed, seed+1, …) so the
@@ -65,7 +81,7 @@ def make_vec_env(seed: int | None = None, n_envs: int = 4, render_mode: str | No
     """
     def _make_factory(env_seed: int | None):
         def _factory() -> Monitor:
-            env = make_env(render_mode=None, seed=env_seed)
+            env = make_env(render_mode=None, seed=env_seed, use_original_env=use_original_env)
             return Monitor(env)
         return _factory
 
@@ -132,8 +148,16 @@ def train_ppo_agent(
     learning_rate: float = 3e-4,
     ent_coef: float = 0.01,
     lr_decay: bool = False,
+    use_original_env: bool = False,
 ) -> Path:
-    config_tag = make_config_tag(n_steps, batch_size, learning_rate, ent_coef, lr_decay)
+    config_tag = make_config_tag(
+        n_steps,
+        batch_size,
+        learning_rate,
+        ent_coef,
+        lr_decay,
+        use_original_env=use_original_env,
+    )
 
     # ── Build output paths organised by config ──────────────────
     if model_path is None or model_path == DEFAULT_MODEL_PATH:
@@ -147,12 +171,12 @@ def train_ppo_agent(
     print(f"  Output dir     : {output_path.parent}")
     print(f"{'═' * 60}\n")
 
-    validation_env = make_env(render_mode=render_mode, seed=seed)
+    validation_env = make_env(render_mode=render_mode, seed=seed, use_original_env=use_original_env)
     check_env(validation_env, warn=True)
     validation_env.close()
-    train_env = make_vec_env(seed=seed)
+    train_env = make_vec_env(seed=seed, use_original_env=use_original_env)
     # use a single env for evaluation so rendering opens a window
-    eval_env = make_env(render_mode=render_mode, seed=seed + 1)
+    eval_env = make_env(render_mode=render_mode, seed=seed + 1, use_original_env=use_original_env)
 
     saved_file = output_path.with_suffix(".zip")
     if continue_training and saved_file.exists():
@@ -223,13 +247,14 @@ def run_policy(
     seed: int | None = None,
     save_log: bool = True,
     config_tag: str = "",
+    use_original_env: bool = False,
 ) -> list[dict]:
     """Run the policy for *episodes* episodes and optionally save a JSON log.
 
     Returns a list of episode dictionaries, each containing the actions,
     observations, rewards, and summary information.
     """
-    env = make_env(render_mode=render_mode, seed=seed)
+    env = make_env(render_mode=render_mode, seed=seed, use_original_env=use_original_env)
     all_episodes: list[dict] = []
 
     try:
@@ -353,6 +378,7 @@ def run_random_baseline(
     seed: int | None = None,
     save_log: bool = True,
     config_tag: str = "",
+    use_original_env: bool = False,
 ) -> list[dict]:
     """Run episodes choosing actions uniformly at random (baseline).
 
@@ -362,7 +388,7 @@ def run_random_baseline(
     import numpy as np
 
     rng = np.random.default_rng(seed)
-    env = make_env(render_mode=render_mode, seed=seed)
+    env = make_env(render_mode=render_mode, seed=seed, use_original_env=use_original_env)
     all_episodes: list[dict] = []
 
     try:
@@ -435,8 +461,16 @@ def train_then_run(
     learning_rate: float = 3e-4,
     ent_coef: float = 0.01,
     lr_decay: bool = False,
+    use_original_env: bool = False,
 ) -> Path:
-    config_tag = make_config_tag(n_steps, batch_size, learning_rate, ent_coef, lr_decay)
+    config_tag = make_config_tag(
+        n_steps,
+        batch_size,
+        learning_rate,
+        ent_coef,
+        lr_decay,
+        use_original_env=use_original_env,
+    )
 
     saved_model_path = train_ppo_agent(
         total_timesteps=total_timesteps,
@@ -448,9 +482,17 @@ def train_then_run(
         learning_rate=learning_rate,
         ent_coef=ent_coef,
         lr_decay=lr_decay,
+        use_original_env=use_original_env,
     )
     model = load_model(saved_model_path)
-    run_policy(model, episodes=episodes, render_mode=render_mode, seed=seed, config_tag=config_tag)
+    run_policy(
+        model,
+        episodes=episodes,
+        render_mode=render_mode,
+        seed=seed,
+        config_tag=config_tag,
+        use_original_env=use_original_env,
+    )
 
     # ── Automatic post-training evaluation ──
     print("\n" + "=" * 55)
@@ -462,6 +504,7 @@ def train_then_run(
         seed=seed,
         model_dir=saved_model_path.parent,
         config_tag=config_tag,
+        use_original_env=use_original_env,
     )
 
     return saved_model_path

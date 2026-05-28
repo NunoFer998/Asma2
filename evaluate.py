@@ -32,6 +32,7 @@ import numpy as np
 from envs.finite_fuel_wrapper import FiniteFuelWrapper  
 
 from envs.custom_lunar_lander import CustomLunarLander
+from gymnasium.envs.box2d.lunar_lander import LunarLander
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -49,6 +50,7 @@ def _run_episodes(
     episodes: int,
     seed: int,
     label: str = "Agent",
+    use_original_env: bool = False,
 ) -> list[dict]:
     """Run *episodes* evaluation episodes and return structured results.
 
@@ -59,7 +61,7 @@ def _run_episodes(
         ``lambda obs: model.predict(obs, deterministic=True)[0]``; for the
         random baseline pass a sampler.
     """
-    env = FiniteFuelWrapper(CustomLunarLander(render_mode=None))
+    env = LunarLander(render_mode=None) if use_original_env else FiniteFuelWrapper(CustomLunarLander(render_mode=None))
 
     results: list[dict] = []
 
@@ -101,36 +103,45 @@ def _run_episodes(
     return results
 
 
-def run_agent_evaluation(model, episodes: int = 50, seed: int = 42) -> list[dict]:
+def run_agent_evaluation(
+    model,
+    episodes: int = 50,
+    seed: int = 42,
+    use_original_env: bool = False,
+) -> list[dict]:
     """Run the trained PPO agent for *episodes* episodes."""
     print(f"\n{'─' * 55}")
-    print(f"  Running trained agent evaluation ({episodes} episodes)")
+    environment_label = "original environment" if use_original_env else "custom environment"
+    print(f"  Running trained agent evaluation on the {environment_label} ({episodes} episodes)")
     print(f"{'─' * 55}")
     return _run_episodes(
         predict_fn=lambda obs: model.predict(obs, deterministic=True)[0],
         episodes=episodes,
         seed=seed,
         label="Agent",
+        use_original_env=use_original_env,
     )
 
 
-def run_random_evaluation(episodes: int = 50, seed: int = 42) -> list[dict]:
+def run_random_evaluation(episodes: int = 50, seed: int = 42, use_original_env: bool = False) -> list[dict]:
     """Run the random baseline for *episodes* episodes."""
     rng = np.random.default_rng(seed)
 
     # We need an env just to know the action-space size
-    probe = FiniteFuelWrapper(CustomLunarLander(render_mode=None))
+    probe = LunarLander(render_mode=None) if use_original_env else FiniteFuelWrapper(CustomLunarLander(render_mode=None))
     n_actions = probe.action_space.n
     probe.close()
 
     print(f"\n{'─' * 55}")
-    print(f"  Running random baseline evaluation ({episodes} episodes)")
+    baseline_label = "original environment baseline" if use_original_env else "random baseline"
+    print(f"  Running {baseline_label} evaluation ({episodes} episodes)")
     print(f"{'─' * 55}")
     return _run_episodes(
         predict_fn=lambda _obs: int(rng.integers(n_actions)),
         episodes=episodes,
         seed=seed,
         label="Random",
+        use_original_env=use_original_env,
     )
 
 
@@ -213,7 +224,7 @@ def compute_metrics(
 #  Report generation
 # ═══════════════════════════════════════════════════════════════════════
 
-def _format_report(metrics: dict, timestamp: str) -> str:
+def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random Baseline") -> str:
     """Create a human-readable evaluation report."""
     a = metrics["agent"]
     r = metrics["random"]
@@ -249,7 +260,7 @@ def _format_report(metrics: dict, timestamp: str) -> str:
     lines.append("")
 
     # ── 4. Improvement over Random Baseline ──────────────────────
-    lines.append("  4) IMPROVEMENT OVER RANDOM BASELINE")
+    lines.append(f"  4) IMPROVEMENT OVER {baseline_name.upper()}")
     imp = metrics["improvement_ratio"]
     if isinstance(imp, float) and imp == float("inf"):
         lines.append(f"     Improvement : ∞  (random mean ≈ 0)")
@@ -296,6 +307,7 @@ def plot_reward_distribution(
     agent_results: list[dict],
     random_results: list[dict],
     save_path: Path,
+    baseline_name: str = "Random Baseline",
 ) -> Path:
     """Side-by-side reward histograms for agent vs random."""
     _setup_plot_style()
@@ -318,12 +330,12 @@ def plot_reward_distribution(
     axes[1].hist(random_rewards, bins=20, color="#fab387", edgecolor="#1e1e2e", alpha=0.9)
     axes[1].axvline(statistics.mean(random_rewards), color="#f38ba8", linestyle="--", linewidth=2, label=f"Mean: {statistics.mean(random_rewards):.1f}")
     axes[1].axvline(200, color="#a6e3a1", linestyle=":", linewidth=2, label="Solved (200)")
-    axes[1].set_title("Random Baseline")
+    axes[1].set_title(baseline_name)
     axes[1].set_xlabel("Episode Return")
     axes[1].legend(fontsize=9)
     axes[1].grid(True, axis="y")
 
-    fig.suptitle("Reward Distribution — Agent vs Random Baseline")
+    fig.suptitle(f"Reward Distribution — Agent vs {baseline_name}")
     fig.tight_layout()
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -441,6 +453,7 @@ def full_evaluation(
     seed: int = 42,
     model_dir: Path | None = None,
     config_tag: str = "",
+    use_original_env: bool = False,
 ) -> dict[str, Any]:
     """Run the complete evaluation pipeline and persist all outputs.
 
@@ -466,14 +479,15 @@ def full_evaluation(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ── 1. Run evaluation episodes ──────────────────────────────
-    agent_results  = run_agent_evaluation(model, episodes=episodes, seed=seed)
-    random_results = run_random_evaluation(episodes=episodes, seed=seed + 1000)
+    baseline_name = "Original Environment Baseline" if use_original_env else "Random Baseline"
+    agent_results  = run_agent_evaluation(model, episodes=episodes, seed=seed, use_original_env=use_original_env)
+    random_results = run_random_evaluation(episodes=episodes, seed=seed + 1000, use_original_env=use_original_env)
 
     # ── 2. Compute metrics ──────────────────────────────────────
     metrics = compute_metrics(agent_results, random_results)
 
     # ── 3. Generate & print report ──────────────────────────────
-    report_text = _format_report(metrics, timestamp)
+    report_text = _format_report(metrics, timestamp, baseline_name=baseline_name)
     if config_tag:
         # Prepend config tag to the report header
         report_text = f"  Config: {config_tag}\n" + report_text
@@ -503,6 +517,7 @@ def full_evaluation(
     plot_reward_distribution(
         agent_results, random_results,
         plot_dir / f"reward_distribution_{timestamp}.png",
+        baseline_name=baseline_name,
     )
     plot_success_per_chunk(
         agent_results,

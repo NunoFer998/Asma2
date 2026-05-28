@@ -42,6 +42,9 @@ python main.py
 
 # Run a random baseline for comparison
 python main.py --random --no-display
+
+# Run with the original Gymnasium LunarLander environment
+python main.py --train --no-display --original-env
 ```
 
 ---
@@ -55,6 +58,7 @@ python main.py --random --no-display
 | `--train` | Train a new PPO agent, then run demo episodes + automatic evaluation |
 | `--evaluate` | Run a comprehensive 50-episode evaluation on an existing model |
 | `--random` | Run a random-action baseline (for comparison) |
+| `--original-env` | Run against the original Gymnasium LunarLander environment instead of the custom wrapper |
 | *(no flag)* | Load and run an existing trained model |
 
 ### General Options
@@ -78,6 +82,8 @@ python main.py --random --no-display
 | `--lr FLOAT` | `3e-4` | 1e-4, 3e-4, 1e-3 | Learning rate for Adam optimiser |
 | `--ent-coef FLOAT` | `0.01` | 0.0, 0.01, 0.05 | Entropy coefficient (exploration) |
 | `--lr-decay` | off | — | Linear LR decay from `--lr` → 0 over training |
+
+When `--original-env` is set, the run uses the stock LunarLander environment and writes outputs under an `orig_...` config tag so it stays separate from the custom-environment runs.
 
 ---
 
