@@ -25,8 +25,14 @@ Examples:
   # Train with linear LR decay
   python main.py --train --no-display --lr 3e-4 --lr-decay
 
+  # Train and compare against a previously trained model instead of random baseline
+  python main.py --train --no-display --baseline ns2048_bs64_lr3e-04_ec0.01
+
   # Evaluate a specific model
   python main.py --evaluate --model-path models/ns1024_bs128_lr1e-03_ec0.05/model
+
+  # Evaluate and compare against another model
+  python main.py --evaluate --baseline ns2048_bs64_lr3e-04_ec0.01
 """,
     )
 
@@ -49,6 +55,10 @@ Examples:
                         help="Continue training from an existing model instead of starting fresh (use with --train).")
     parser.add_argument("--eval-episodes", type=int, default=50,
                         help="Number of episodes for the comprehensive evaluation (default: 50).")
+    parser.add_argument("--baseline", type=str, default="",
+                        help="Config tag of a previously trained model to use as the comparison baseline "
+                             "instead of the random baseline (e.g. ns2048_bs64_lr3e-04_ec0.01). "
+                             "Hyphens are converted to underscores automatically.")
 
     # ── Tunable hyperparameters ──
     hp = parser.add_argument_group("hyperparameters", "PPO hyperparameters for benchmarking")
@@ -68,6 +78,9 @@ Examples:
 
 def main() -> None:
     args = parse_args()
+
+    # Normalise baseline tag: allow hyphens on the CLI, convert to underscores
+    baseline_tag = args.baseline.replace("-", "_") if args.baseline else ""
 
     # Build the config tag from the hyperparameters (used for file/folder naming)
     config_tag = make_config_tag(
@@ -115,6 +128,20 @@ def main() -> None:
         print(f"Loading model from {model_file} for evaluation ...")
         print(f"  Config: {config_tag}")
         model = load_model(model_path)
+
+        # Load baseline model if specified
+        baseline_model = None
+        if baseline_tag:
+            from rl_agent import PROJECT_ROOT
+            baseline_path = PROJECT_ROOT / "models" / baseline_tag / "model"
+            baseline_file = baseline_path.with_suffix(".zip")
+            if baseline_file.exists():
+                print(f"  Baseline: {baseline_tag}")
+                baseline_model = load_model(baseline_path)
+            else:
+                print(f"  \u26a0  Baseline model not found at {baseline_file}, falling back to random baseline.")
+                baseline_tag = ""
+
         full_evaluation(
             model=model,
             episodes=args.eval_episodes,
@@ -122,6 +149,8 @@ def main() -> None:
             model_dir=model_path.parent,
             config_tag=config_tag,
             use_original_env=args.original_env,
+            baseline_model=baseline_model,
+            baseline_tag=baseline_tag,
         )
         return
 
@@ -140,6 +169,7 @@ def main() -> None:
             ent_coef=args.ent_coef,
             lr_decay=args.lr_decay,
             use_original_env=args.original_env,
+            baseline_tag=baseline_tag,
         )
         return
 

@@ -145,6 +145,26 @@ def run_random_evaluation(episodes: int = 50, seed: int = 42, use_original_env: 
     )
 
 
+def run_model_baseline_evaluation(
+    baseline_model,
+    episodes: int = 50,
+    seed: int = 42,
+    baseline_name: str = "Baseline Model",
+    use_original_env: bool = False,
+) -> list[dict]:
+    """Run a previously trained model as the baseline for *episodes* episodes."""
+    print(f"\n{'─' * 55}")
+    print(f"  Running {baseline_name} evaluation ({episodes} episodes)")
+    print(f"{'─' * 55}")
+    return _run_episodes(
+        predict_fn=lambda obs: baseline_model.predict(obs, deterministic=True)[0],
+        episodes=episodes,
+        seed=seed,
+        label=baseline_name,
+        use_original_env=use_original_env,
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Metrics computation
 # ═══════════════════════════════════════════════════════════════════════
@@ -238,8 +258,10 @@ def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random B
 
     # ── 1. Mean Return ± Std ─────────────────────────────────────
     lines.append("  1) MEAN RETURN ± STD")
-    lines.append(f"     Agent  :  {a['mean_reward']:>8.2f} ± {a['std_reward']:.2f}   (median {a['median_reward']:.2f})")
-    lines.append(f"     Random :  {r['mean_reward']:>8.2f} ± {r['std_reward']:.2f}   (median {r['median_reward']:.2f})")
+    # Truncate baseline label for alignment (max 8 chars for table alignment)
+    bl_label = baseline_name[:8].ljust(8) if len(baseline_name) > 8 else baseline_name.ljust(8)
+    lines.append(f"     Agent    :  {a['mean_reward']:>8.2f} ± {a['std_reward']:.2f}   (median {a['median_reward']:.2f})")
+    lines.append(f"     {bl_label}:  {r['mean_reward']:>8.2f} ± {r['std_reward']:.2f}   (median {r['median_reward']:.2f})")
     lines.append(f"     Range  :  [{a['min_reward']:.2f} … {a['max_reward']:.2f}]")
     lines.append("")
 
@@ -263,11 +285,11 @@ def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random B
     lines.append(f"  4) IMPROVEMENT OVER {baseline_name.upper()}")
     imp = metrics["improvement_ratio"]
     if isinstance(imp, float) and imp == float("inf"):
-        lines.append(f"     Improvement : ∞  (random mean ≈ 0)")
+        lines.append(f"     Improvement : ∞  (baseline mean ≈ 0)")
     else:
         lines.append(f"     Improvement : {imp}×")
-    lines.append(f"     Agent mean  : {a['mean_reward']:.2f}")
-    lines.append(f"     Random mean : {r['mean_reward']:.2f}")
+    lines.append(f"     Agent mean    : {a['mean_reward']:.2f}")
+    lines.append(f"     Baseline mean : {r['mean_reward']:.2f}")
     lines.append("")
 
     # ── 5. Additional stats ──────────────────────────────────────
@@ -454,6 +476,8 @@ def full_evaluation(
     model_dir: Path | None = None,
     config_tag: str = "",
     use_original_env: bool = False,
+    baseline_model=None,
+    baseline_tag: str = "",
 ) -> dict[str, Any]:
     """Run the complete evaluation pipeline and persist all outputs.
 
@@ -479,9 +503,25 @@ def full_evaluation(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ── 1. Run evaluation episodes ──────────────────────────────
-    baseline_name = "Original Environment Baseline" if use_original_env else "Random Baseline"
-    agent_results  = run_agent_evaluation(model, episodes=episodes, seed=seed, use_original_env=use_original_env)
-    random_results = run_random_evaluation(episodes=episodes, seed=seed + 1000, use_original_env=use_original_env)
+    if baseline_model is not None:
+        baseline_name = f"Baseline: {baseline_tag}" if baseline_tag else "Baseline Model"
+    elif use_original_env:
+        baseline_name = "Original Environment Baseline"
+    else:
+        baseline_name = "Random Baseline"
+
+    agent_results = run_agent_evaluation(model, episodes=episodes, seed=seed, use_original_env=use_original_env)
+
+    if baseline_model is not None:
+        random_results = run_model_baseline_evaluation(
+            baseline_model,
+            episodes=episodes,
+            seed=seed + 1000,
+            baseline_name=baseline_name,
+            use_original_env=use_original_env,
+        )
+    else:
+        random_results = run_random_evaluation(episodes=episodes, seed=seed + 1000, use_original_env=use_original_env)
 
     # ── 2. Compute metrics ──────────────────────────────────────
     metrics = compute_metrics(agent_results, random_results)

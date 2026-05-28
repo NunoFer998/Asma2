@@ -462,6 +462,7 @@ def train_then_run(
     ent_coef: float = 0.01,
     lr_decay: bool = False,
     use_original_env: bool = False,
+    baseline_tag: str = "",
 ) -> Path:
     config_tag = make_config_tag(
         n_steps,
@@ -498,6 +499,18 @@ def train_then_run(
     print("\n" + "=" * 55)
     print("  STARTING AUTOMATIC POST-TRAINING EVALUATION")
     print("=" * 55)
+
+    # Load baseline model if a baseline tag was provided
+    baseline_model = None
+    if baseline_tag:
+        baseline_path = PROJECT_ROOT / "models" / baseline_tag / "model"
+        baseline_file = baseline_path.with_suffix(".zip")
+        if baseline_file.exists():
+            print(f"  Baseline model: {baseline_tag}")
+            baseline_model = load_model(baseline_path)
+        else:
+            print(f"  ⚠  Baseline model not found at {baseline_file}, falling back to random baseline.")
+
     full_evaluation(
         model=model,
         episodes=eval_episodes,
@@ -505,6 +518,8 @@ def train_then_run(
         model_dir=saved_model_path.parent,
         config_tag=config_tag,
         use_original_env=use_original_env,
+        baseline_model=baseline_model,
+        baseline_tag=baseline_tag,
     )
 
     return saved_model_path
