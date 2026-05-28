@@ -17,9 +17,9 @@ class FiniteFuelWrapper(Wrapper):
     def __init__(
         self,
         env,
-        max_fuel: float = 1000.0,
-        main_engine_cost: float = 30.0,
-        side_engine_cost: float = 10.0,
+        max_fuel: float = 1200.0,
+        main_engine_cost: float = 12.0,
+        side_engine_cost: float = 7.0,
     ):
         # O env base DEVE estar em rgb_array — nós tratamos da janela
         assert env.render_mode in (None, "rgb_array"), (
