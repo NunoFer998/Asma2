@@ -33,10 +33,11 @@ def make_config_tag(
     ent_coef: float = 0.01,
     lr_decay: bool = False,
     use_original_env: bool = False,
+    seed: int = 42,
 ) -> str:
     """Return a short, filesystem-safe string that uniquely identifies a run.
 
-    Example: ``ns2048_bs64_lr3e-04_ec0.01``  or  ``ns1024_bs128_lr1e-03_ec0.05_decay``
+    Example: ``ns2048_bs64_lr3e-04_ec0.01_s42``  or  ``ns1024_bs128_lr1e-03_ec0.05_decay_s0``
     """
     lr_str = f"{learning_rate:.0e}".replace("+", "")  # "3e-04"
     tag = f"ns{n_steps}_bs{batch_size}_lr{lr_str}_ec{ent_coef}"
@@ -44,6 +45,7 @@ def make_config_tag(
         tag += "_decay"
     if use_original_env:
         tag = f"orig_{tag}"
+    tag += f"_s{seed}"
     return tag
 
 
@@ -157,6 +159,7 @@ def train_ppo_agent(
         ent_coef,
         lr_decay,
         use_original_env=use_original_env,
+        seed=seed,
     )
 
     # ── Build output paths organised by config ──────────────────
@@ -471,6 +474,7 @@ def train_then_run(
         ent_coef,
         lr_decay,
         use_original_env=use_original_env,
+        seed=seed,
     )
 
     saved_model_path = train_ppo_agent(

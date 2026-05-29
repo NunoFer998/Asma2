@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -79,8 +80,15 @@ Examples:
 def main() -> None:
     args = parse_args()
 
-    # Normalise baseline tag: allow hyphens on the CLI, convert to underscores
-    baseline_tag = args.baseline.replace("-", "_") if args.baseline else ""
+    # Normalise baseline tag: convert separator hyphens (e.g. ns2048-bs64) to
+    # underscores, but preserve hyphens inside scientific notation (e.g. 3e-04).
+    # Separator hyphens appear between a digit and a letter; value hyphens
+    # appear between a letter and a digit.  Also handle the "orig-" prefix.
+    if args.baseline:
+        baseline_tag = re.sub(r'(?<=\d)-(?=[a-z])', '_', args.baseline)
+        baseline_tag = re.sub(r'^orig-', 'orig_', baseline_tag)
+    else:
+        baseline_tag = ""
 
     # Build the config tag from the hyperparameters (used for file/folder naming)
     config_tag = make_config_tag(
@@ -90,6 +98,7 @@ def main() -> None:
         ent_coef=args.ent_coef,
         lr_decay=args.lr_decay,
         use_original_env=args.original_env,
+        seed=args.seed,
     )
 
     # Resolve model path: explicit --model-path wins, otherwise auto-generate from config
