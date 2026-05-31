@@ -22,9 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "ppo_custom_lunar_lander"
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Config tag — encodes hyperparameters into folder / file names
-# ═══════════════════════════════════════════════════════════════════════
+# ── Config tag ──────────────────────────────────────────────────────────
 
 def make_config_tag(
     n_steps: int = 2048,
@@ -35,11 +33,8 @@ def make_config_tag(
     use_original_env: bool = False,
     seed: int = 42,
 ) -> str:
-    """Return a short, filesystem-safe string that uniquely identifies a run.
-
-    Example: ``ns2048_bs64_lr3e-04_ec0.01_s42``  or  ``ns1024_bs128_lr1e-03_ec0.05_decay_s0``
-    """
-    lr_str = f"{learning_rate:.0e}".replace("+", "")  # "3e-04"
+    """Return a unique config identifier."""
+    lr_str = f"{learning_rate:.0e}".replace("+", "")
     tag = f"ns{n_steps}_bs{batch_size}_lr{lr_str}_ec{ent_coef}"
     if lr_decay:
         tag += "_decay"
@@ -49,9 +44,7 @@ def make_config_tag(
     return tag
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Environment helpers
-# ═══════════════════════════════════════════════════════════════════════
+# ── Environment helpers ────────────────────────────────────────────────
 
 def make_env(
     render_mode: str | None = None,
@@ -61,7 +54,6 @@ def make_env(
     if use_original_env:
         env = LunarLander(render_mode=render_mode)
     else:
-        # Se render_mode="human", o env base corre em rgb_array
         base_render_mode = "rgb_array" if render_mode == "human" else render_mode
         env = CustomLunarLander(render_mode=base_render_mode)
         env = FiniteFuelWrapper(env)
@@ -76,11 +68,7 @@ def make_vec_env(
     render_mode: str | None = None,
     use_original_env: bool = False,
 ) -> DummyVecEnv:
-    """Create a vectorised training environment with *n_envs* sub-environments.
-
-    Each sub-environment receives a different seed (seed, seed+1, …) so the
-    agent sees diverse landing-pad positions during training.
-    """
+    """Create a vectorised training environment."""
     def _make_factory(env_seed: int | None):
         def _factory() -> Monitor:
             env = make_env(render_mode=None, seed=env_seed, use_original_env=use_original_env)
@@ -93,9 +81,7 @@ def make_vec_env(
     ]
     return DummyVecEnv(factories)
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Model building
-# ═══════════════════════════════════════════════════════════════════════
+# ── Model building ─────────────────────────────────────────────────────
 
 def build_model(
     env,
@@ -105,15 +91,7 @@ def build_model(
     ent_coef: float = 0.01,
     config_tag: str = "",
 ) -> PPO:
-    """Build a PPO model with the given hyperparameters.
-
-    Parameters
-    ----------
-    learning_rate : float or Callable
-        Either a constant float or a schedule function (e.g. from
-        ``get_linear_fn``).  When ``lr_decay=True`` in ``train_ppo_agent``,
-        a linear decay schedule is passed here.
-    """
+    """Build a PPO model."""
     tb_dir = PROJECT_ROOT / "tensorboard"
     if config_tag:
         tb_dir = tb_dir / config_tag
@@ -133,9 +111,7 @@ def build_model(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Training
-# ═══════════════════════════════════════════════════════════════════════
+# ── Training ───────────────────────────────────────────────────────────
 
 def train_ppo_agent(
     total_timesteps: int = 500_000,
@@ -144,7 +120,6 @@ def train_ppo_agent(
     seed: int = 42,
     render_mode: str | None = None,
     continue_training: bool = False,
-    # ── Tunable hyperparameters ──
     n_steps: int = 2048,
     batch_size: int = 64,
     learning_rate: float = 3e-4,
@@ -162,7 +137,6 @@ def train_ppo_agent(
         seed=seed,
     )
 
-    # ── Build output paths organised by config ──────────────────
     if model_path is None or model_path == DEFAULT_MODEL_PATH:
         output_path = PROJECT_ROOT / "models" / config_tag / "model"
     else:
@@ -178,7 +152,6 @@ def train_ppo_agent(
     check_env(validation_env, warn=True)
     validation_env.close()
     train_env = make_vec_env(seed=seed, use_original_env=use_original_env)
-    # use a single env for evaluation so rendering opens a window
     eval_env = make_env(render_mode=render_mode, seed=seed + 1, use_original_env=use_original_env)
 
     saved_file = output_path.with_suffix(".zip")
@@ -191,7 +164,6 @@ def train_ppo_agent(
         if continue_training:
             print(f"No existing model at {saved_file}, starting fresh.")
 
-        # ── Resolve learning rate (constant or decay schedule) ──
         lr: float | Callable = learning_rate
         if lr_decay:
             from stable_baselines3.common.utils import get_linear_fn
@@ -239,9 +211,7 @@ def load_model(model_path: Path | None = None) -> PPO:
     return PPO.load(str(path))
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Policy execution & logging
-# ═══════════════════════════════════════════════════════════════════════
+# ── Policy execution & logging ─────────────────────────────────────────
 
 def run_policy(
     model: PPO,
@@ -252,11 +222,7 @@ def run_policy(
     config_tag: str = "",
     use_original_env: bool = False,
 ) -> list[dict]:
-    """Run the policy for *episodes* episodes and optionally save a JSON log.
-
-    Returns a list of episode dictionaries, each containing the actions,
-    observations, rewards, and summary information.
-    """
+    """Run the policy and optionally log to JSON."""
     env = make_env(render_mode=render_mode, seed=seed, use_original_env=use_original_env)
     all_episodes: list[dict] = []
 
@@ -285,7 +251,6 @@ def run_policy(
                 total_reward += float(reward)
                 step_count += 1
 
-                # Record step data
                 steps.append({
                     "step": step_count,
                     "action": int(action) if hasattr(action, "item") else action,
@@ -314,7 +279,7 @@ def run_policy(
 
 
 def _save_episode_log(episodes: list[dict], prefix: str = "episode_actions", config_tag: str = "") -> Path:
-    """Persist episode data to a timestamped JSON file under ``logs/<config_tag>/``."""
+    """Save episode data to JSON."""
     log_dir = PROJECT_ROOT / "logs"
     if config_tag:
         log_dir = log_dir / config_tag
@@ -325,14 +290,13 @@ def _save_episode_log(episodes: list[dict], prefix: str = "episode_actions", con
     log_file.write_text(json.dumps(episodes, indent=2), encoding="utf-8")
     print(f"\nEpisode actions saved to {log_file}")
 
-    # Also save a human-readable summary
     _save_summary(episodes, log_dir, prefix, timestamp)
 
     return log_file
 
 
 def _save_summary(episodes: list[dict], log_dir: Path, prefix: str, timestamp: str) -> Path:
-    """Write a concise, human-readable summary of the run to a ``.txt`` file."""
+    """Write human-readable run summary."""
     import statistics
 
     rewards = [ep["total_reward"] for ep in episodes]
@@ -345,7 +309,6 @@ def _save_summary(episodes: list[dict], log_dir: Path, prefix: str, timestamp: s
     lines.append(f"{'=' * 50}")
     lines.append("")
 
-    # ── Per-episode table ──
     lines.append(f"  {'Episode':<10} {'Reward':>10} {'Steps':>8} {'Pad chunk':>10}")
     lines.append(f"  {'-'*10} {'-'*10} {'-'*8} {'-'*10}")
     for ep in episodes:
@@ -383,11 +346,7 @@ def run_random_baseline(
     config_tag: str = "",
     use_original_env: bool = False,
 ) -> list[dict]:
-    """Run episodes choosing actions uniformly at random (baseline).
-
-    Uses the same logging format as ``run_policy`` so results are directly
-    comparable.
-    """
+    """Run uniform random baseline."""
     import numpy as np
 
     rng = np.random.default_rng(seed)
@@ -446,9 +405,7 @@ def run_random_baseline(
     return all_episodes
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Train + Run + Evaluate pipeline
-# ═══════════════════════════════════════════════════════════════════════
+# ── Train + Run + Evaluate pipeline ───────────────────────────────────
 
 def train_then_run(
     total_timesteps: int = 500_000,
@@ -499,12 +456,11 @@ def train_then_run(
         use_original_env=use_original_env,
     )
 
-    # ── Automatic post-training evaluation ──
+    # Automatic post-training evaluation
     print("\n" + "=" * 55)
     print("  STARTING AUTOMATIC POST-TRAINING EVALUATION")
     print("=" * 55)
 
-    # Load baseline model if a baseline tag was provided
     baseline_model = None
     if baseline_tag:
         baseline_path = PROJECT_ROOT / "models" / baseline_tag / "model"

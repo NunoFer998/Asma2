@@ -5,14 +5,11 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import Wrapper
 
-try:
-    import pygame
-except ImportError as e:
-    raise ImportError("pygame is required. Install gymnasium[box2d].") from e
+import pygame
 
 
 class FiniteFuelWrapper(Wrapper):
-    """Finite-fuel system with HUD overlay, usando o padrão rgb_array da Farama."""
+    """Finite-fuel system with HUD overlay."""
 
     def __init__(
         self,
@@ -21,23 +18,20 @@ class FiniteFuelWrapper(Wrapper):
         main_engine_cost: float = 12.0,
         side_engine_cost: float = 7.0,
     ):
-        # O env base DEVE estar em rgb_array — nós tratamos da janela
         assert env.render_mode in (None, "rgb_array"), (
-        f"FiniteFuelWrapper requer render_mode=None ou 'rgb_array' no env base. "
-        f"Recebido: {env.render_mode!r}"
-    )
+            f"FiniteFuelWrapper requires render_mode=None or 'rgb_array'. "
+            f"Got: {env.render_mode!r}"
+        )
         super().__init__(env)
         self.max_fuel = float(max_fuel)
         self.main_engine_cost = float(main_engine_cost)
         self.side_engine_cost = float(side_engine_cost)
         self.current_fuel = self.max_fuel
 
-        # Estado da janela pygame (gerido por nós, não pelo env base)
         self._window = None
         self._clock = None
         self._screen_size = None
 
-        # Expõe render_mode como "human" para o exterior
         self.metadata = copy.deepcopy(env.metadata)
         if "human" not in self.metadata.get("render_modes", []):
             self.metadata.setdefault("render_modes", []).append("human")
@@ -75,27 +69,22 @@ class FiniteFuelWrapper(Wrapper):
         return observation, reward, terminated, truncated, info
 
     def render(self):
-        # Compatibilidade — a renderização real acontece em step/reset
         return None
 
     def _render_frame(self):
-        """Obtém o frame rgb_array, desenha o HUD, apresenta na janela."""
+        """Render the frame with fuel HUD overlay."""
         if self.env.render_mode != "rgb_array":
             return
         frame = self.env.render()  # numpy array (H, W, 3)
         if frame is None:
             return
 
-        # Desenha a barra de combustível no array numpy
         frame = self._overlay_bar_on_frame(frame)
-
-        # Transpõe para pygame (pygame usa W, H ao contrário de numpy H, W)
         rgb_array = np.transpose(frame, axes=(1, 0, 2))
 
         if self._screen_size is None:
             self._screen_size = rgb_array.shape[:2]
 
-        # Inicializa a janela uma única vez
         if self._window is None:
             pygame.init()
             pygame.display.init()
@@ -109,7 +98,7 @@ class FiniteFuelWrapper(Wrapper):
         self._window.blit(surf, (0, 0))
         pygame.event.pump()
         self._clock.tick(self.metadata.get("render_fps", 50))
-        pygame.display.flip()  # ← único flip, controlado por nós
+        pygame.display.flip()
 
     def close(self):
         super().close()

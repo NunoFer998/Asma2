@@ -37,7 +37,7 @@ Examples:
 """,
     )
 
-    # ── Mode selection ──
+    # Mode selection
     parser.add_argument("--train", action="store_true", help="Train a new PPO agent before running it.")
     parser.add_argument("--evaluate", action="store_true",
                         help="Run a comprehensive evaluation on an existing model (reports + plots).")
@@ -45,7 +45,7 @@ Examples:
     parser.add_argument("--original-env", action="store_true",
                         help="Run against the original Gymnasium LunarLander environment instead of the custom wrapper.")
 
-    # ── General options ──
+    # General options
     parser.add_argument("--timesteps", type=int, default=500_000, help="Number of training timesteps.")
     parser.add_argument("--episodes", type=int, default=5, help="Number of demo episodes to render.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training and evaluation.")
@@ -61,7 +61,7 @@ Examples:
                              "instead of the random baseline (e.g. ns2048_bs64_lr3e-04_ec0.01). "
                              "Hyphens are converted to underscores automatically.")
 
-    # ── Tunable hyperparameters ──
+    # Hyperparameters
     hp = parser.add_argument_group("hyperparameters", "PPO hyperparameters for benchmarking")
     hp.add_argument("--n-steps", type=int, default=2048,
                     help="Rollout length per env per update (try: 1024, 2048, 4096).")
@@ -80,17 +80,13 @@ Examples:
 def main() -> None:
     args = parse_args()
 
-    # Normalise baseline tag: convert separator hyphens (e.g. ns2048-bs64) to
-    # underscores, but preserve hyphens inside scientific notation (e.g. 3e-04).
-    # Separator hyphens appear between a digit and a letter; value hyphens
-    # appear between a letter and a digit.  Also handle the "orig-" prefix.
     if args.baseline:
         baseline_tag = re.sub(r'(?<=\d)-(?=[a-z])', '_', args.baseline)
         baseline_tag = re.sub(r'^orig-', 'orig_', baseline_tag)
     else:
         baseline_tag = ""
 
-    # Build the config tag from the hyperparameters (used for file/folder naming)
+    # Build config tag from hyperparameters
     config_tag = make_config_tag(
         n_steps=args.n_steps,
         batch_size=args.batch_size,
@@ -101,11 +97,11 @@ def main() -> None:
         seed=args.seed,
     )
 
-    # Resolve model path: explicit --model-path wins, otherwise auto-generate from config
+    # Resolve model path
     if args.model_path is not None:
         model_path = args.model_path
     else:
-        model_path = DEFAULT_MODEL_PATH  # train_ppo_agent will auto-override with config_tag
+        model_path = DEFAULT_MODEL_PATH
 
     if args.random:
         print("Running random baseline...")
@@ -119,7 +115,6 @@ def main() -> None:
         return
 
     if args.evaluate:
-        # For evaluate, resolve the model path from config tag if not explicit
         if args.model_path is None:
             from rl_agent import PROJECT_ROOT
             model_path = PROJECT_ROOT / "models" / config_tag / "model"
@@ -138,7 +133,6 @@ def main() -> None:
         print(f"  Config: {config_tag}")
         model = load_model(model_path)
 
-        # Load baseline model if specified
         baseline_model = None
         if baseline_tag:
             from rl_agent import PROJECT_ROOT
@@ -167,7 +161,7 @@ def main() -> None:
         train_then_run(
             total_timesteps=args.timesteps,
             episodes=args.episodes,
-            model_path=args.model_path,  # None → auto from config tag
+            model_path=args.model_path,
             seed=args.seed,
             render_mode=None if args.no_display else "human",
             continue_training=args.continue_training,

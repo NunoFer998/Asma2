@@ -1,20 +1,4 @@
-"""Comprehensive evaluation module for the Custom Lunar Lander PPO agent.
-
-Runs N episodes (default 50) for both the trained agent and a random baseline,
-then computes and reports:
-    1. Mean Return ± Std
-    2. Landing Success Rate (%)
-    3. Success Rate per Pad Chunk (generalisation proof)
-    4. Improvement over Random Baseline (×)
-    5. Learning Curve (from EvalCallback logs)
-
-Outputs:
-    - ``logs/evaluation_report_<timestamp>.txt``  – human-readable report
-    - ``logs/evaluation_report_<timestamp>.json``  – machine-readable metrics
-    - ``logs/plots/reward_distribution_<timestamp>.png``
-    - ``logs/plots/success_per_chunk_<timestamp>.png``
-    - ``logs/plots/learning_curve_<timestamp>.png``
-"""
+"""Comprehensive evaluation module for the PPO agent."""
 
 from __future__ import annotations
 
@@ -29,21 +13,18 @@ import matplotlib
 matplotlib.use("Agg")  # non-interactive backend — safe on headless servers
 import matplotlib.pyplot as plt
 import numpy as np
-from envs.finite_fuel_wrapper import FiniteFuelWrapper  
+from envs.finite_fuel_wrapper import FiniteFuelWrapper
 
 from envs.custom_lunar_lander import CustomLunarLander
 from gymnasium.envs.box2d.lunar_lander import LunarLander
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# ── Thresholds ──────────────────────────────────────────────────────────
-SOLVED_REWARD    = 200.0   # standard "solved" threshold for LunarLander
-SOFT_LAND_REWARD = 0.0     # any positive return counts as a soft landing
+SOLVED_REWARD    = 200.0
+SOFT_LAND_REWARD = 0.0
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Data collection
-# ═══════════════════════════════════════════════════════════════════════
+# ── Data collection ───────────────────────────────────────────────────
 
 def _run_episodes(
     predict_fn,
@@ -52,15 +33,7 @@ def _run_episodes(
     label: str = "Agent",
     use_original_env: bool = False,
 ) -> list[dict]:
-    """Run *episodes* evaluation episodes and return structured results.
-
-    Parameters
-    ----------
-    predict_fn:
-        Callable ``(observation) -> action``.  For the trained agent pass
-        ``lambda obs: model.predict(obs, deterministic=True)[0]``; for the
-        random baseline pass a sampler.
-    """
+    """Run *episodes* evaluation episodes."""
     env = LunarLander(render_mode=None) if use_original_env else FiniteFuelWrapper(CustomLunarLander(render_mode=None))
 
     results: list[dict] = []
@@ -126,8 +99,6 @@ def run_agent_evaluation(
 def run_random_evaluation(episodes: int = 50, seed: int = 42, use_original_env: bool = False) -> list[dict]:
     """Run the random baseline for *episodes* episodes."""
     rng = np.random.default_rng(seed)
-
-    # We need an env just to know the action-space size
     probe = LunarLander(render_mode=None) if use_original_env else FiniteFuelWrapper(CustomLunarLander(render_mode=None))
     n_actions = probe.action_space.n
     probe.close()
@@ -165,15 +136,13 @@ def run_model_baseline_evaluation(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Metrics computation
-# ═══════════════════════════════════════════════════════════════════════
+# ── Metrics computation ─────────────────────────────────────────────────
 
 def compute_metrics(
     agent_results: list[dict],
     random_results: list[dict],
 ) -> dict[str, Any]:
-    """Compute all five priority metrics from the raw episode data."""
+    """Compute all evaluation metrics from raw episode data."""
 
     def _stats(results: list[dict]) -> dict:
         rewards = [r["total_reward"] for r in results]
@@ -183,7 +152,6 @@ def compute_metrics(
         landed = [r for r in results if r["landed_safely"]]
         solved = [r for r in results if r["solved"]]
 
-        # ── Per-chunk breakdown ──
         chunk_rewards:  dict[int, list[float]] = defaultdict(list)
         chunk_successes: dict[int, list[bool]] = defaultdict(list)
         for r in results:
@@ -220,14 +188,11 @@ def compute_metrics(
     agent_stats  = _stats(agent_results)
     random_stats = _stats(random_results)
 
-    # Improvement metrics
     random_mean = random_stats["mean_reward"]
     agent_mean  = agent_stats["mean_reward"]
     abs_improvement = round(agent_mean - random_mean, 2)
 
     if random_mean != 0:
-        # Relative improvement: how much better agent is vs baseline
-        # e.g. agent=158, random=-190 → (158-(-190))/|-190| = 1.83×
         rel_improvement = round(abs_improvement / abs(random_mean), 2)
     else:
         rel_improvement = float("inf")
@@ -240,12 +205,10 @@ def compute_metrics(
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Report generation
-# ═══════════════════════════════════════════════════════════════════════
+# ── Report generation ──────────────────────────────────────────────────
 
 def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random Baseline") -> str:
-    """Create a human-readable evaluation report."""
+    """Build the human-readable evaluation report text."""
     a = metrics["agent"]
     r = metrics["random"]
 
@@ -255,33 +218,24 @@ def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random B
     lines.append(f"  {timestamp[:8]}  {timestamp[9:11]}:{timestamp[11:13]}:{timestamp[13:15]}")
     lines.append(f"{'═' * 60}")
     lines.append("")
-
-    # ── 1. Mean Return ± Std ─────────────────────────────────────
     lines.append("  1) MEAN RETURN ± STD")
-    # Truncate baseline label for alignment (max 8 chars for table alignment)
     bl_label = baseline_name[:8].ljust(8) if len(baseline_name) > 8 else baseline_name.ljust(8)
     lines.append(f"     Agent    :  {a['mean_reward']:>8.2f} ± {a['std_reward']:.2f}   (median {a['median_reward']:.2f})")
     lines.append(f"     {bl_label}:  {r['mean_reward']:>8.2f} ± {r['std_reward']:.2f}   (median {r['median_reward']:.2f})")
     lines.append(f"     Range  :  [{a['min_reward']:.2f} … {a['max_reward']:.2f}]")
     lines.append("")
-
-    # ── 2. Landing Success Rate ──────────────────────────────────
     lines.append("  2) LANDING SUCCESS RATE")
     lines.append(f"     Soft landing (reward > 0) :  {a['landing_success_pct']:>5.1f}%")
     lines.append(f"     Solved (reward ≥ 200)     :  {a['solved_pct']:>5.1f}%")
     lines.append(f"     Crash rate                :  {a['crash_pct']:>5.1f}%")
     lines.append(f"     Timeout rate              :  {a['timeout_pct']:>5.1f}%")
     lines.append("")
-
-    # ── 3. Success Rate per Pad Chunk ────────────────────────────
     lines.append("  3) SUCCESS RATE PER PAD CHUNK")
     lines.append(f"     {'Chunk':<8} {'Episodes':>9} {'MeanReward':>12} {'Success%':>10}")
     lines.append(f"     {'─'*8} {'─'*9} {'─'*12} {'─'*10}")
     for c, stats in sorted(a["per_chunk"].items()):
         lines.append(f"     {c:<8} {stats['episodes']:>9} {stats['mean_reward']:>12.2f} {stats['success_rate']:>9.1f}%")
     lines.append("")
-
-    # ── 4. Improvement over Random Baseline ──────────────────────
     lines.append(f"  4) IMPROVEMENT OVER {baseline_name.upper()}")
     imp = metrics["improvement_ratio"]
     if isinstance(imp, float) and imp == float("inf"):
@@ -291,8 +245,6 @@ def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random B
     lines.append(f"     Agent mean    : {a['mean_reward']:.2f}")
     lines.append(f"     Baseline mean : {r['mean_reward']:.2f}")
     lines.append("")
-
-    # ── 5. Additional stats ──────────────────────────────────────
     lines.append("  5) ADDITIONAL STATISTICS")
     lines.append(f"     Mean episode length : {a['mean_steps']:.1f} steps")
     lines.append(f"     Evaluation episodes : {a['episodes']}")
@@ -301,12 +253,10 @@ def _format_report(metrics: dict, timestamp: str, baseline_name: str = "Random B
     return "\n".join(lines) + "\n"
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Plot generation
-# ═══════════════════════════════════════════════════════════════════════
+# ── Plot generation ─────────────────────────────────────────────────────
 
 def _setup_plot_style():
-    """Apply a clean, modern style to all plots."""
+    """Apply a consistent dark theme to plots."""
     plt.rcParams.update({
         "figure.facecolor":  "#1e1e2e",
         "axes.facecolor":    "#1e1e2e",
@@ -331,14 +281,12 @@ def plot_reward_distribution(
     save_path: Path,
     baseline_name: str = "Random Baseline",
 ) -> Path:
-    """Side-by-side reward histograms for agent vs random."""
+    """Side-by-side reward histograms for agent vs baseline."""
     _setup_plot_style()
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
     agent_rewards  = [r["total_reward"] for r in agent_results]
     random_rewards = [r["total_reward"] for r in random_results]
-
-    # Agent histogram
     axes[0].hist(agent_rewards, bins=20, color="#89b4fa", edgecolor="#1e1e2e", alpha=0.9)
     axes[0].axvline(statistics.mean(agent_rewards), color="#f38ba8", linestyle="--", linewidth=2, label=f"Mean: {statistics.mean(agent_rewards):.1f}")
     axes[0].axvline(200, color="#a6e3a1", linestyle=":", linewidth=2, label="Solved (200)")
@@ -347,8 +295,6 @@ def plot_reward_distribution(
     axes[0].set_ylabel("Count")
     axes[0].legend(fontsize=9)
     axes[0].grid(True, axis="y")
-
-    # Random histogram
     axes[1].hist(random_rewards, bins=20, color="#fab387", edgecolor="#1e1e2e", alpha=0.9)
     axes[1].axvline(statistics.mean(random_rewards), color="#f38ba8", linestyle="--", linewidth=2, label=f"Mean: {statistics.mean(random_rewards):.1f}")
     axes[1].axvline(200, color="#a6e3a1", linestyle=":", linewidth=2, label="Solved (200)")
@@ -402,7 +348,6 @@ def plot_success_per_chunk(
     ax2.set_ylabel("Success Rate (%)")
     ax2.set_ylim(0, 110)
 
-    # Combined legend
     handles1, labels1 = ax1.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left", fontsize=9)
@@ -419,11 +364,7 @@ def plot_learning_curve(
     eval_log_path: Path,
     save_path: Path,
 ) -> Path | None:
-    """Plot the learning curve from the EvalCallback NPZ log.
-
-    The file is expected at ``<model_dir>/eval_logs/evaluations.npz`` and
-    contains ``timesteps``, ``results``, and ``ep_lengths``.
-    """
+    """Plot the learning curve from the EvalCallback NPZ log."""
     npz_file = eval_log_path / "evaluations.npz"
     if not npz_file.exists():
         print(f"  ⚠  EvalCallback log not found at {npz_file}, skipping learning curve.")
@@ -433,7 +374,7 @@ def plot_learning_curve(
     data = np.load(str(npz_file))
 
     timesteps = data["timesteps"]
-    results   = data["results"]  # shape: (n_evals, n_eval_episodes)
+    results   = data["results"]
 
     mean_rewards = results.mean(axis=1)
     std_rewards  = results.std(axis=1)
@@ -465,9 +406,7 @@ def plot_learning_curve(
     return save_path
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Main entry point
-# ═══════════════════════════════════════════════════════════════════════
+# ── Main entry point ────────────────────────────────────────────────────
 
 def full_evaluation(
     model,
@@ -479,30 +418,10 @@ def full_evaluation(
     baseline_model=None,
     baseline_tag: str = "",
 ) -> dict[str, Any]:
-    """Run the complete evaluation pipeline and persist all outputs.
-
-    Parameters
-    ----------
-    model : stable_baselines3.PPO
-        The trained PPO model.
-    episodes : int
-        Number of evaluation episodes (default 50).
-    seed : int
-        Random seed for reproducibility.
-    model_dir : Path | None
-        Directory containing the trained model (used to find
-        ``eval_logs/evaluations.npz``).  Falls back to
-        ``PROJECT_ROOT / "models"``.
-
-    Returns
-    -------
-    dict
-        The full metrics dictionary.
-    """
+    """Run the complete evaluation pipeline."""
     model_dir = model_dir or (PROJECT_ROOT / "models")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # ── 1. Run evaluation episodes ──────────────────────────────
     if baseline_model is not None:
         baseline_name = f"Baseline: {baseline_tag}" if baseline_tag else "Baseline Model"
     elif use_original_env:
@@ -523,13 +442,12 @@ def full_evaluation(
     else:
         random_results = run_random_evaluation(episodes=episodes, seed=seed + 1000, use_original_env=use_original_env)
 
-    # ── 2. Compute metrics ──────────────────────────────────────
+    # Compute metrics
     metrics = compute_metrics(agent_results, random_results)
 
-    # ── 3. Generate & print report ──────────────────────────────
+    # Generate & save report
     report_text = _format_report(metrics, timestamp, baseline_name=baseline_name)
     if config_tag:
-        # Prepend config tag to the report header
         report_text = f"  Config: {config_tag}\n" + report_text
     print(f"\n{report_text}")
 
@@ -544,12 +462,11 @@ def full_evaluation(
     print(f"Report saved → {report_file}")
 
     json_file = log_dir / f"evaluation_report_{timestamp}.json"
-    # Include the config tag in the JSON output
     output_metrics = {**metrics, "config_tag": config_tag} if config_tag else metrics
     json_file.write_text(json.dumps(output_metrics, indent=2),encoding="utf-8")
     print(f"JSON   saved → {json_file}")
 
-    # ── 4. Generate plots ───────────────────────────────────────
+    # Generate plots
     plot_dir = log_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
 
